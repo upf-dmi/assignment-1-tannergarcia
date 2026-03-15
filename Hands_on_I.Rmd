@@ -1,6 +1,6 @@
 ---
-title: "my title"
-author: "Dummy Surname (dummy@upf.edu)"
+title: "Assignment 1 DMI"
+author: "Tanner Garcia (tanneralexander.garcia01@estudiant.upf.edu) y David Fragoso (david.fragoso01@estudiant.upf.edu)"
 date: "Last update: `r format(Sys.time(), '%d %B, %Y')`"      
 output:
   html_document:
@@ -12,66 +12,399 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 This practical focuses on data wrangling, exploratory data analysis, visualization, and critical comparison with published results using real biomedical data.
 
 We will work with the publication [**Proteomic and Metabolomic Characterization of COVID-19 Patient Sera**](https://www.sciencedirect.com/science/article/pii/S0092867420306279)
 
-# Exercise 1  
+# Exercise 1
 
 Download and load Supplementary Table 1 (“Additional Demographical and Baseline Characteristics of COVID-19 Patients and Control Groups”) from the supplementary materials of the publication.
- 
-## Exercise 1.1  
 
-Reproduce Table 1 from the manuscript using the supplementary data. Match the reported summary statistics   as closely as possible.
+## Exercise 1.1
+
+Reproduce Table 1 from the manuscript using the supplementary data. Match the reported summary statistics as closely as possible.
 
 Briefly discuss any discrepancies between your results and the published table, and provide possible explanations.
 
 ```{r}
+#path <- "C:/Users/USUARIO/Desktop/CBEM/Data mining/Hands on I/Supplementary table 1.xlsx"
 
-
-
+# use local path, assume in same folder
+# makes more sense for submission
+path <- "Supplementary table 1.xlsx"
+data <- readxl::read_xlsx(path)
+# summary(data)
 ```
 
+```{r}
+library(tableone)
+library(boot)
+
+data1 <- data
+# Factor the basic variables that we're interested in
+data1$`Sex - no.%` <- 
+  factor(data1$`Sex g`, 
+         levels=c(0,1),
+         labels=c("Female", # Reference
+                  "Male"))
+
+# patient type. 0, healthy; 1, non-COVID-19; 2, non-Severe; 3, Severe
+data1$`Group` <- 
+  factor(data1$`Group d`, 
+         levels=c(0,1,2,3),
+         labels=c("Healthy Control", # Reference
+                  "Non-COVID-19",
+                  'Non-severe',
+                  'Severe'))
+
+data1$`BMI, kg/m2`<- as.numeric(data1$`BMI h`) # Converting BMI to numeric
+data1$`COVID` <-  
+  factor(data1$`Group d`, 
+         levels=c(0,1,2,3),
+         labels=c("", # Reference
+                  "",
+                  'COVID-19',
+                  'COVID-19'))
+# Add difference between onset and admission dates
+data1$`Time from Onset to Admission, Days` <-
+  as.numeric(difftime(data$`Admission date`,
+                      data$`Onset date f`,
+                      units = "days"))
+
+
+table1::table1(~ `Sex - no.%` + `Age (year)` + `BMI, kg/m2` + `Time from Onset to Admission, Days`| COVID + `Group`,  overall=F, data=data1, topclass="Rtable1-zebra")
+```
+
+Comparing both the table obtained and the one displayed by Shen et. al.(2020) we can first observe that many parameters that were not available to us like the *Time from Admission to Severe, Days, Symptoms - no. (%), Chest CT - no. (%), etc.*, are not present in our table. However we've been able to correctly capture the basic biological information of the patients that's available in the dataset that they have uploaded and, on top of that, we've managed to replicate the style of display of severity groups and the biological parameters of the patients with a decent grade of fidelity.
 
 ## Exercise 1.2
+
 Perform an exploratory data analysis (EDA) of the dataset. At a minimum, include:
 
-- Descriptive statistics for key variables  
-- Appropriate visualizations (e.g. distributions, group comparisons)  
-- A brief written summary of notable patterns, anomalies, or data quality issues  
-
+-   Descriptive statistics for key variables\
+-   Appropriate visualizations (e.g. distributions, group comparisons)\
+-   A brief written summary of notable patterns, anomalies, or data quality issues
 
 ```{r}
+library(ggplot2)
+
+# Plotting the distributions for different characteristics of the patients
+## Starting with the different COVID-19 groups divided by the sex
+
+ggplot(data1, aes(x = Group, fill = `Sex - no.%`)) +
+  geom_bar( color = 'white') +
+  scale_fill_manual(values = c("Male" = "blue4", "Female" = "red2")) +
+  labs(
+    y = "Number of patients",
+    fill = "Sex")
 
 ```
+
+```{r}
+# Exploring the distribution of the BMI:
+ggplot(data1, aes(x = BMI)) +
+  geom_density(fill = "steelblue", color = 'white') +
+  facet_wrap(~ Group) +
+  ylab('Number of patients') +
+  xlab('BMI')
+
+```
+
+```{r}
+# Exploring the distribution of the age in years within each group:
+
+library(dplyr)
+
+stats <- data1 %>%
+  group_by(Group) %>%
+  summarise(
+    mean_age   = mean(`Age (year)`, na.rm = TRUE),
+    median_age = median(`Age (year)`, na.rm = TRUE)
+  )
+ggplot(data1, aes(x = `Age (year)`)) +
+  geom_density(fill = "seagreen3", color = "white") +
+  facet_wrap(~ Group) +
+  geom_vline(
+    data = stats,
+    aes(xintercept = mean_age),
+    color = "gray35",
+    linewidth = 1
+  ) +
+  geom_vline(
+    data = stats,
+    aes(xintercept = median_age),
+    color = "red",
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  ylab("Number of patients") +
+  xlab("Age (years)")
+
+
+```
+
+```{r}
+# Load libraries
+library(ggplot2)
+library(dplyr)
+
+# Ensure Group is a factor
+data2 <- data1
+data2 <- data2[data2$Group %in% c("Severe", "Non-severe"), ]
+
+# Plot
+ggplot(data2, aes(x = Group, y = `Time from Onset to Admission, Days`, fill = Group)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  geom_jitter(width = 0.15, size = 2, alpha = 0.7) +
+  labs(
+    title = "Time from Onset to Admission by Severity",
+    x = "Group",
+    y = "Time from Onset to Admission (Days)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### Summary
+
+When we study the distribution of the samples between patient groups we can observe that we have the most samples in the Non-severe group while the rest have a similar number of samples. By plotting them divided by groups we can also observe that the proportion of female samples is much smaller which correlates to what we obtained in the table from Exercice 1.1. Regarding the BMI, by plotting its distribution by groups we can observe how, at first glance, doesn't have a big correlation with the infection nor severity of the illness, as both healthy and groups affected by an illness look like they have all the patients distributed across the BMI range without any special distinction. However, by exploring the distribution of the age between the several groups, we can observe that both the mean and median of the age in patients with severe COVID-19 is higher than the one in the Non-severe group. Finally, by plotting the days from onset to admission for each patient in a boxplot we can observe that the vast majority of Non-severe cases have a low time, while the severe cases span over a wider time range, which could indicate that cases taken early have a higher change to remain non-severe.
 
 # Exercise 2
+
 ## Exercise 2.1
-Reproduce Supplementary Figure 1 using the data without modifying or removing any observations. Use the same variables and groupings as in the original figure. 
+
+Reproduce Supplementary Figure 1 using the data without modifying or removing any observations. Use the same variables and groupings as in the original figure.
+
 ```{r}
+data <- readxl::read_xlsx(path)
+#install.packages('ggplot2')
+#install.packages('janitor')
+library(ggplot2)
+library(janitor)
+library(dbplyr)
+
+data <- clean_names(data)
+
+toy <- data %>% select(patient_id_a, group_d, platelet_count_109_l)
+toy$group_d <- as.factor(toy$group_d)
+
+data_clean <- data %>%
+  filter(group_d %in% c(1, 2, 3)) %>%   # remove NA and unwanted groups
+  mutate(
+    group_d = factor(
+      group_d,
+      levels = c(1, 2, 3),
+      labels = c("Non-COVID-19", "Non-Severe", "Severe")
+    )
+  )
+
+ggplot(data_clean,
+       aes(x = group_d,
+           y = platelet_count_109_l,
+           fill = group_d)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(
+    width = 0.2,
+    size = 0.7,
+    alpha = 0.5,
+    color = "grey40"
+  ) +
+  labs(
+    title = "Platelet Count by Patient Group",
+    x = "Patient Group",
+    y = expression("Platelet count ("*10^9*"/L)")
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 11),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+
 
 ```
 
+```{r}
+library(tidyverse)
+
+clinical_vars <- c(
+  "wbc_count_109_l"= "White blood cell (WBC)",
+  "lymphocyte_count_109_l" = "Lymphocyte",
+  "monocyte_count_109_l" = "Monocyte",
+  "platelet_count_109_l" = "Platelet",
+  "crp_i_mg_l" = "C-reactive protein (CRP)",
+  "alt_j_u_l" = "Alanine aminotransferase (ALT)",
+  "ast_k_u_l" = "Aspartate aminotransferase (AST)",
+  "ggt_l_u_l" = "Glutamyltransferase (GGT)",
+  "tbil_m_mmol_l" = "Total bilirubin (TBIL)",
+  "dbil_n_mmol_l" = "Direct bilirubin (DBIL)",
+  "creatinine_mmol_l" = "Creatinine",
+  "glucose_mmol_l" = "Glucose"
+)
+
+data_clean <- data %>%
+  filter(group_d %in% c(1, 2, 3)) %>%
+  mutate(
+    group_d = factor(
+      group_d,
+      levels = c(1, 2, 3),
+      labels = c("Non-COVID-19", "Non-Severe", "Severe")
+    )
+  ) %>%
+  mutate(
+    across(
+      all_of(names(clinical_vars)), # Look at the names (snake_case)
+      ~ as.numeric(str_trim(.))
+    )
+  )
+
+data_long <- data_clean %>%
+  pivot_longer(
+    cols = all_of(names(clinical_vars)),
+    names_to = "Parameter",
+    values_to = "Value"
+  ) %>%
+  filter(!is.na(Value)) %>%
+  mutate(
+    Parameter = clinical_vars[Parameter] 
+  )
+
+ggplot(data_long,
+       aes(x = group_d,
+           y = Value,
+           fill = group_d)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(
+    width = 0.2,
+    size = 0.6,
+    alpha = 0.4,
+    color = "grey40"
+  ) +
+  facet_wrap(~ Parameter, scales = "free_y", ncol = 4) +
+  labs(
+    title = "Clinical Parameters Across Patient Groups",
+    x = NULL,
+    y = "Measurement Value",
+    fill = "Patient Group"
+  ) + 
+  scale_y_log10() +
+  scale_fill_manual(values = c("#0a23af", "#c89d6e", "#ad5c26")) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 9),
+    axis.text.x = element_blank(),   # remove group labels
+    axis.ticks.x = element_blank(),  # remove ticks
+    legend.position = "right"        # show color guide
+  )
+```
 
 ## Exercise 2.2
+
 Identify and handle outliers using an appropriate and well-justified method (e.g. removal, transformation, or robust statistics).
 
 Reproduce Supplementary Figure 1 after outlier handling and discuss how and why the results change.
+
 ```{r}
 
+data_no_outliers <- data_long %>%
+  group_by(Parameter, group_d) %>%
+  filter(
+    Value >= quantile(Value, 0.25, na.rm = TRUE) -
+             1.5 * IQR(Value, na.rm = TRUE),
+    Value <= quantile(Value, 0.75, na.rm = TRUE) +
+             1.5 * IQR(Value, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+ggplot(data_no_outliers,
+       aes(x = group_d,
+           y = Value,
+           fill = group_d)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(
+    width = 0.2,
+    size = 0.6,
+    alpha = 0.4,
+    color = "grey40"
+  ) +
+  facet_wrap(~ Parameter, scales = "free_y", ncol = 4) +
+  labs(
+    title = "Clinical Parameters Across Patient Groups (Outliers Removed)",
+    x = NULL,
+    y = "Measurement Value",
+    fill = "Patient Group"
+  ) + 
+  scale_y_log10() +
+  scale_fill_manual(values = c("#0a23af", "#c89d6e", "#ad5c26")) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 9),
+    axis.text.x = element_blank(),   # remove group labels
+    axis.ticks.x = element_blank(),  # remove ticks
+    legend.position = "right"        # show color guide
+  )
 ```
 
 # Exercise 3
+
 Create a heatmap of the biomarker data. Include group and gender as annotation variables.
 
 ```{r}
+library(tidyverse)
+if (!require("pheatmap")) install.packages("pheatmap")
+library(pheatmap)
 
+cols_to_use <- names(clinical_vars)
+
+heatmap_prep <- data_clean %>%
+  select(patient_id_a, group_d, sex_g, any_of(cols_to_use)) %>%
+  mutate(across(any_of(cols_to_use), ~as.numeric(as.character(.))))
+
+
+heatmap_imputed <- heatmap_prep %>%
+  mutate(across(any_of(cols_to_use), 
+                ~ifelse(is.na(.), median(., na.rm = TRUE), .)))
+
+
+mat_cols <- intersect(colnames(heatmap_imputed), cols_to_use)
+mat <- as.matrix(heatmap_imputed[, mat_cols])
+rownames(mat) <- heatmap_imputed$patient_id_a
+mat <- t(mat)
+
+rownames(mat) <- clinical_vars[rownames(mat)]
+
+annotation_col <- data.frame(
+  Group = heatmap_imputed$group_d,
+  Sex = as.factor(heatmap_imputed$sex_g)
+)
+rownames(annotation_col) <- heatmap_imputed$patient_id_a
+
+
+ann_colors = list(
+  Group = c("Non-COVID-19" = "#0a23af", "Non-Severe" = "#c89d6e", "Severe" = "#ad5c26")
+)
+
+
+pheatmap(
+  mat,
+  annotation_col = annotation_col,
+  annotation_colors = ann_colors,
+  main = "Biomarker Heatmap (Clustered by Severity)",
+  scale = "row",
+  clustering_method = "ward.D2",
+  show_colnames = FALSE,
+  color = colorRampPalette(c("#0a23af", "white", "#ad5c26"))(100),
+  border_color = NA
+)
 ```
 
 # Conclusion
 
-Write a concise conclusion (1 paragraphs) summarizing the main differences observed across the three patient groups based on the twelve clinical parameters. Support your statements with evidence from your analyses.
+Across the twelve clinical parameters, clear differences were observed among the three patient groups (Non-COVID-19, Non-Severe COVID-19, and Severe COVID-19), with the severe group generally showing the most abnormal profiles. Inflammatory markers and indicators of organ dysfunction were notably elevated in severe patients: C-reactive protein (CRP) showed substantially higher values compared with both the Non-COVID-19 and Non-Severe groups, pinpointing a stronger inflammation. Similarly, liver function markers (ALT, AST, GGT) and bilirubin measures (TBIL and DBIL) tended to be higher in the Severe group, suggesting greater stress in the liver. Creatinine and glucose levels were also generally increased in severe cases, indicating potential renal stress and metabolic disturbance. In contrast, lymphocyte counts were lower in severe patients relative to the other groups, consistent with lymphopenia often associated with severe infection. Other blood cell parameters such as WBC, monocyte, and platelet counts showed more moderate differences but still displayed broader variability in severe patients. Overall, the Non-Severe group typically showed intermediate values between Non-COVID-19 and Severe patients, supporting the fact that there's a gradient in clinical and biochemical abnormalities that corresponds with disease severity.
 
 # session info {.unnumbered}
 
