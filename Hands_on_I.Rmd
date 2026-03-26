@@ -101,16 +101,6 @@ ggplot(data1, aes(x = Group, fill = `Sex - no.%`)) +
 ```
 
 ```{r}
-# Exploring the distribution of the BMI:
-ggplot(data1, aes(x = BMI)) +
-  geom_density(fill = "steelblue", color = 'white') +
-  facet_wrap(~ Group) +
-  ylab('Number of patients') +
-  xlab('BMI')
-
-```
-
-```{r}
 # Exploring the distribution of the age in years within each group:
 
 library(dplyr)
